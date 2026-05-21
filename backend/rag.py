@@ -1,12 +1,15 @@
 import os
+import time
+
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
-from langchain_google_genai import (
-    GoogleGenerativeAIEmbeddings,
-    ChatGoogleGenerativeAI,
-)
+# GEMINI LLM
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+# HUGGINGFACE EMBEDDINGS
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -18,15 +21,18 @@ VECTOR_STORE_PATH = "vector_store"
 os.makedirs(DATA_PATH, exist_ok=True)
 os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
 
-# Gemini Embeddings
-embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/text-embedding-004",
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
-    request_options={"timeout": 120}  # Increase timeout to 120 seconds to prevent 504 Deadline Exceeded
+# =========================
+# HUGGINGFACE EMBEDDINGS
+# =========================
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
+# =========================
+# GEMINI LLM
+# =========================
 
-# Gemini LLM
 def get_llm():
     return ChatGoogleGenerativeAI(
         model="gemini-1.5-flash",
@@ -34,58 +40,100 @@ def get_llm():
         google_api_key=os.getenv("GOOGLE_API_KEY")
     )
 
+# =========================
+# INGEST PDFS
+# =========================
 
 def ingest_pdfs():
+
     try:
+
         loader = PyPDFDirectoryLoader(DATA_PATH)
+
         documents = loader.load()
 
         if not documents:
-            return {"status": "No documents found to ingest"}
+            return {
+                "status": "No documents found to ingest"
+            }
 
+        print(f"Loaded {len(documents)} pages")
+
+        # BETTER CHUNKING
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
+            chunk_size=500,
+            chunk_overlap=100
         )
 
         chunks = text_splitter.split_documents(documents)
 
-        # Batch the document ingestion to prevent 504 Deadline Exceeded / timeout issues
+        print(f"Created {len(chunks)} chunks")
+
+        # BATCHING
         batch_size = 32
-        print(f"Ingesting {len(chunks)} chunks in batches of {batch_size}...")
-        
-        # Initialize vectorstore with the first batch
+
+        print(
+            f"Ingesting {len(chunks)} chunks "
+            f"in batches of {batch_size}"
+        )
+
+        # INITIALIZE VECTORSTORE
         first_batch = chunks[:batch_size]
+
         vectorstore = FAISS.from_documents(
             first_batch,
             embeddings
         )
 
-        # Add the remaining chunks in batches with a sleep in-between
-        import time
+        # INGEST REMAINING BATCHES
         for i in range(batch_size, len(chunks), batch_size):
-            batch = chunks[i:i + batch_size]
-            print(f"Ingesting chunks {i} to {min(i + batch_size, len(chunks))}...")
-            vectorstore.add_documents(batch)
-            time.sleep(1.0)  # Rate limiting safety sleep
 
+            batch = chunks[i:i + batch_size]
+
+            print(
+                f"Ingesting chunks "
+                f"{i} to "
+                f"{min(i + batch_size, len(chunks))}"
+            )
+
+            vectorstore.add_documents(batch)
+
+            # SMALL DELAY FOR STABILITY
+            time.sleep(0.3)
+
+        # SAVE VECTORSTORE
         vectorstore.save_local(VECTOR_STORE_PATH)
 
         return {
-            "status": f"Successfully ingested {len(documents)} documents ({len(chunks)} chunks)"
+            "status": (
+                f"Successfully ingested "
+                f"{len(documents)} documents "
+                f"({len(chunks)} chunks)"
+            )
         }
 
     except Exception as e:
+
         import traceback
-        print(f"Ingestion failed: {traceback.format_exc()}")
+
+        print(
+            f"Ingestion failed:\n"
+            f"{traceback.format_exc()}"
+        )
+
         return {
             "status": "error",
             "message": str(e)
         }
 
+# =========================
+# LOAD VECTORSTORE
+# =========================
 
 def get_vectorstore():
+
     try:
+
         index_file = os.path.join(
             VECTOR_STORE_PATH,
             "index.faiss"
@@ -101,12 +149,19 @@ def get_vectorstore():
         )
 
     except Exception as e:
+
         print(f"Vectorstore loading error: {e}")
+
         return None
 
+# =========================
+# QUERY RAG
+# =========================
 
 def query_rag(query: str):
+
     try:
+
         vectorstore = get_vectorstore()
 
         if not vectorstore:
@@ -126,18 +181,22 @@ def query_rag(query: str):
         )
 
         template = """
-        You are LawGPT, an expert AI legal assistant.
+You are LawGPT, an expert AI legal assistant.
 
-        Use the context below to answer the legal question.
+Answer ONLY using the provided context.
 
-        Context:
-        {context}
+If the answer is not found in the context,
+say:
+"I could not find that information in the document."
 
-        Question:
-        {question}
+Context:
+{context}
 
-        Answer:
-        """
+Question:
+{question}
+
+Answer:
+"""
 
         prompt = PromptTemplate.from_template(template)
 
@@ -155,8 +214,14 @@ def query_rag(query: str):
 
         sources = [
             {
-                "source": doc.metadata.get("source", "Unknown"),
-                "page": doc.metadata.get("page", "Unknown")
+                "source": doc.metadata.get(
+                    "source",
+                    "Unknown"
+                ),
+                "page": doc.metadata.get(
+                    "page",
+                    "Unknown"
+                )
             }
             for doc in docs
         ]
@@ -167,14 +232,20 @@ def query_rag(query: str):
         }
 
     except Exception as e:
+
         return {
             "response": f"RAG Error: {str(e)}",
             "sources": []
         }
 
+# =========================
+# SUMMARIZE DOCUMENT
+# =========================
 
 def summarize_document(filename: str):
+
     try:
+
         vectorstore = get_vectorstore()
 
         if not vectorstore:
@@ -196,19 +267,26 @@ def summarize_document(filename: str):
         )
 
         template = """
-        Summarize the following legal document.
+Summarize the following legal document.
 
-        Context:
-        {context}
+Context:
+{context}
 
-        Summary:
-        """
+Summary:
+"""
 
         prompt = PromptTemplate.from_template(template)
 
-        chain = prompt | get_llm() | StrOutputParser()
+        chain = (
+            prompt
+            | get_llm()
+            | StrOutputParser()
+        )
 
-        return chain.invoke({"context": context_text})
+        return chain.invoke({
+            "context": context_text
+        })
 
     except Exception as e:
+
         return f"Summary Error: {str(e)}"

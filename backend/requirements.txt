@@ -4,32 +4,50 @@ langchain-core==0.2.3
 langchain-text-splitters==0.2.1
 langsmith==0.1.147
 
+# GEMINI
 langchain-google-genai==1.0.5
 google-generativeai==0.5.4
+
+# HUGGINGFACE EMBEDDINGS
+sentence-transformers==2.7.0
+transformers==4.41.2
+torch>=2.2.0
+
+# FASTAPI
 fastapi==0.111.0
 uvicorn==0.30.1
 python-dotenv==1.0.1
 python-multipart==0.0.9
 python-jose[cryptography]==3.3.0
 
+# DATABASE
 pymongo==4.7.2
 motor==3.4.0
+SQLAlchemy==2.0.49
 
+# VECTOR STORE
 faiss-cpu==1.8.0
 
+# PDF
 pypdf==4.2.0
+
+# DATA
 numpy==1.26.4
 pandas==2.3.3
 
+# NETWORKING
 requests==2.32.5
 httpx==0.27.2
 
+# PYDANTIC
 pydantic==2.13.4
 pydantic_core==2.46.4
 
+# UTILS
 tqdm==4.67.3
 typing_extensions==4.15.0
 
+# ASYNC
 aiohttp==3.13.5
 aiosignal==1.4.0
 attrs==26.1.0
@@ -37,7 +55,7 @@ frozenlist==1.8.0
 multidict==6.7.1
 yarl==1.22.0
 
-SQLAlchemy==2.0.49
+# HELPERS
 tenacity==8.5.0
 PyYAML==6.0.3
 orjson==3.11.5
